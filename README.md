@@ -38,12 +38,13 @@ Start the Development Server
 
 Bash
 npm run dev
-Open http://localhost:3000 in your browser to view the application.```
+Open http://localhost:3000 in your browser to view the application.
 
 
 
 .env.example File Content
 Create a file named .env.example in your root directory containing:
+
 
 # Database Configuration
 MONGODB_URI=mongodb+srv://your_username:your_password@cluster.mongodb.net/doctor-tracker?retryWrites=true&w=majority
@@ -55,6 +56,7 @@ JWT_SECRET=your_jwt_secret_key
 # App Configuration
 NEXTAUTH_URL=http://localhost:3000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+
 
 
 System Architecture
@@ -100,7 +102,9 @@ The application follows a modern serverless Next.js App Router architecture, con
 [MongoDB Database]---> (4) Query Processing & Aggregation
 │
 ▼
-[Client Response]  <--- (5) Structured JSON & Pagination Payload
+[Client Response]  <--- (5) Structured JSON & Pagination Payload 
+
+```
 
 
 1. **User Action & Request Trigger**: 
