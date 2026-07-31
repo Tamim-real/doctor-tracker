@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
+import { verifyAuth } from '@/lib/auth';
 import Doctor from '@/models/Doctor';
 
 // GET: Fetch Doctors with Search, Filter & Pagination
 export async function GET(req) {
   try {
+    await verifyAuth();
+
     await connectDB();
 
     const { searchParams } = new URL(req.url);

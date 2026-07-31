@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
+import { verifyAuth } from '@/lib/auth';
 import Doctor from '@/models/Doctor';
 
 // GET: Single Doctor by ID
 export async function GET(req, { params }) {
   try {
+    await verifyAuth();
     await connectDB();
     const { id } = await params;
 

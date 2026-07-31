@@ -1,193 +1,377 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import StatsCard from '@/components/dashboard/StatsCard';
-import Link from 'next/link';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+} from 'recharts';
+import { Stethoscope, Users, Activity, HeartPulse, LogOut, Inbox } from 'lucide-react';
 
-export default function DashboardPage() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+// Shadcn UI Components
+import { Card, CardContent} from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+
+function CountUp({ value, decimals = 0, duration = 700 }) {
+  const [display, setDisplay] = useState(0);
+  const frame = useRef();
 
   useEffect(() => {
-    async function fetchStats() {
+    const target = Number(value) || 0;
+    const start = performance.now();
+    const from = 0;
+
+    function tick(now) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(from + (target - from) * eased);
+      if (progress < 1) frame.current = requestAnimationFrame(tick);
+    }
+
+    frame.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame.current);
+  }, [value, duration]);
+
+  return <>{display.toFixed(decimals)}</>;
+}
+
+function ReadoutTooltip({ active, payload, label, unit }) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs">
+      <p className="text-slate-400 mb-1">{label}</p>
+      <p className="font-mono text-base font-semibold">
+        {payload[0].value} <span className="text-slate-400 text-xs">{unit}</span>
+      </p>
+    </div>
+  );
+}
+
+function VitalCard({ label, value, decimals, icon: Icon, accentColor, bgColor, suffix }) {
+  return (
+    <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      <CardContent className="p-6 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {label}
+          </p>
+          <div className="mt-2 font-mono text-3xl font-semibold text-foreground">
+            <CountUp value={value} decimals={decimals} />
+            {suffix && <span className="font-sans text-sm text-muted-foreground ml-1">{suffix}</span>}
+          </div>
+        </div>
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${bgColor} ${accentColor}`}>
+          <Icon className="h-5 w-5" strokeWidth={2} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function VitalCardSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-6 flex items-center justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-8 w-16" />
+        </div>
+        <Skeleton className="h-12 w-12 rounded-xl" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <Card className="p-6 space-y-4">
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-3 w-56" />
+      </div>
+      <Skeleton className="h-72 w-full rounded-xl" />
+    </Card>
+  );
+}
+
+function ECGDivider() {
+  return (
+    <div className="w-full flex items-center gap-3" aria-hidden="true">
+      <svg width="100%" height="16" viewBox="0 0 400 16" preserveAspectRatio="none" className="flex-1">
+        <polyline
+          points="0,8 140,8 155,2 165,14 178,8 400,8"
+          fill="none"
+          stroke="currentColor"
+          className="text-border"
+          strokeWidth="1.5"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function PanelHeader({ title, caption, dotColor, total, totalLabel }) {
+  return (
+    <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">{caption}</p>
+      </div>
+      {typeof total === 'number' && (
+        <Badge variant="outline" className="font-mono text-xs">
+          {total} {totalLabel}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function EmptyChartState({ label }) {
+  return (
+    <div className="h-72 w-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <Inbox className="h-7 w-7" strokeWidth={1.5} />
+      <p className="text-xs">{label}</p>
+    </div>
+  );
+}
+
+export default function DashboardPage({ user }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchAnalytics() {
       try {
-        const res = await fetch('/api/dashboard/stats');
+        const res = await fetch('/api/analytics');
         const result = await res.json();
 
-        if (!result.success) {
-          throw new Error(result.message || 'Failed to fetch dashboard statistics');
+        if (!cancelled) {
+          if (res.ok && result.success) {
+            setData(result.data);
+          } else {
+            toast.error(result.message || 'Could not load analytics.');
+          }
         }
-
-        setData(result.data);
       } catch (err) {
-        setError(err.message);
+        if (!cancelled) {
+          toast.error('Network error. Failed to load analytics.');
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    fetchStats();
+    fetchAnalytics();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!res.ok) throw new Error();
+      router.push('/login');
+      router.refresh();
+    } catch (err) {
+      toast.error('Could not sign out. Please try again.');
+      setLoggingOut(false);
+    }
+  };
 
-  if (error) {
-    return (
-      <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
-        {error}
-      </div>
-    );
-  }
+  const { summary, patientsPerDoctor = [], dateStats = [] } = data || {};
+  const avg = summary?.avgPatientsPerDoctor;
+  const avgDisplay = typeof avg === 'number' ? avg : Number(avg) || 0;
+  const totalNewPatients = dateStats.reduce((sum, d) => sum + (d.count || 0), 0);
 
-  const { summary, charts, recentPatients } = data;
+  const getInitials = (name) => {
+    return (name || 'Dr Admin')
+      .split(' ')
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Dashboard Overview</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Welcome back! Here is what is happening across your healthcare platform.
-        </p>
-      </div>
-
-      {/* Top Summary Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <StatsCard
-          title="Total Registered Doctors"
-          value={summary?.totalDoctors || 0}
-          icon="🩺"
-          bgAccent="bg-blue-50 text-blue-600"
-        />
-        <StatsCard
-          title="Total Assigned Patients"
-          value={summary?.totalPatients || 0}
-          icon="🩺"
-          bgAccent="bg-emerald-50 text-emerald-600"
-        />
-      </div>
-
-      {/* Analytics & Distribution Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Specialization Distribution */}
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Doctors by Specialization</h2>
-          {charts?.specializationStats?.length === 0 ? (
-            <p className="text-slate-400 text-sm">No doctor data available yet.</p>
-          ) : (
-            <div className="space-y-4">
-              {charts?.specializationStats?.map((item, index) => {
-                const percentage = Math.round((item.count / summary.totalDoctors) * 100) || 0;
-                return (
-                  <div key={index} className="space-y-1.5">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium text-slate-700">{item.specialization}</span>
-                      <span className="text-slate-500 font-semibold">{item.count} ({percentage}%)</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${percentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Top Doctors by Patient Capacity */}
-        <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Top Doctors (Most Patients)</h2>
-          {charts?.topDoctors?.length === 0 ? (
-            <p className="text-slate-400 text-sm">No patients assigned to doctors yet.</p>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {charts?.topDoctors?.map((doc) => (
-                <div key={doc._id} className="py-3.5 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-slate-800 text-sm">{doc.doctorName}</p>
-                    <p className="text-xs text-slate-500">{doc.specialization}</p>
-                  </div>
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 font-semibold text-xs rounded-full">
-                    {doc.totalPatients} Patients
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Recent Patients Table */}
-      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
+    <TooltipProvider>
+      <div className="space-y-8 p-8 min-h-screen bg-background text-foreground">
+        {/* Header Section */}
+        <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">Recently Registered Patients</h2>
-            <p className="text-xs text-slate-500">Latest patient registrations in the system</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight">Admin Dashboard</h1>
+              <Badge variant="secondary" className="bg-teal-50 text-teal-700 hover:bg-teal-100 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full">
+                <HeartPulse className="h-3 w-3 text-teal-600 animate-pulse" />
+                <span className="font-mono text-[10px] font-semibold tracking-wider">LIVE</span>
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              System metrics and patient analytics overview
+            </p>
           </div>
-          <Link
-            href="/patients"
-            className="text-sm font-medium text-blue-600 hover:text-blue-700 transition"
-          >
-            View All →
-          </Link>
+
+          {/* Admin Profile & Logout */}
+          <div className="hidden sm:flex items-center gap-3 p-2 pr-3 rounded-2xl bg-card border shadow-sm">
+            <Avatar className="h-9 w-9 bg-teal-100 text-teal-800 font-mono text-xs font-bold">
+              <AvatarFallback className="bg-teal-100 text-teal-800">
+                {getInitials(user?.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 pr-2">
+              <p className="text-xs font-semibold truncate">{user?.name || 'Dr. Admin'}</p>
+              <p className="font-mono text-[11px] text-muted-foreground truncate">
+                {user?.email || 'admin@hospital.com'}
+              </p>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Sign out</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-slate-700 uppercase text-xs font-semibold">
-              <tr>
-                <th className="px-4 py-3 rounded-l-lg">Patient Name</th>
-                <th className="px-4 py-3">Condition</th>
-                <th className="px-4 py-3">Assigned Doctor</th>
-                <th className="px-4 py-3 rounded-r-lg">Registration Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {recentPatients?.length === 0 ? (
-                <tr>
-                  <td colSpan="4" className="text-center py-6 text-slate-400">
-                    No recent patients found.
-                  </td>
-                </tr>
-              ) : (
-                recentPatients?.map((patient) => (
-                  <tr key={patient._id} className="hover:bg-slate-50/50 transition">
-                    <td className="px-4 py-3.5 font-medium text-slate-800">{patient.name}</td>
-                    <td className="px-4 py-3.5">
-                      <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200/60 rounded-md text-xs font-medium">
-                        {patient.condition}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-700">
-                      {patient.doctor?.name ? (
-                        <div>
-                          <p className="font-medium">{patient.doctor.name}</p>
-                          <p className="text-xs text-slate-400">{patient.doctor.specialization}</p>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 italic">Unassigned</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-500 text-xs">
-                      {new Date(patient.createdAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <ECGDivider />
+
+        {/* Vitals Strip */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          {loading ? (
+            <>
+              <VitalCardSkeleton />
+              <VitalCardSkeleton />
+              <VitalCardSkeleton />
+            </>
+          ) : (
+            <>
+              <VitalCard
+                label="Total Doctors"
+                value={summary?.totalDoctors ?? 0}
+                icon={Stethoscope}
+                accentColor="text-teal-700"
+                bgColor="bg-teal-50"
+              />
+              <VitalCard
+                label="Total Patients"
+                value={summary?.totalPatients ?? 0}
+                icon={Users}
+                accentColor="text-amber-700"
+                bgColor="bg-amber-50"
+              />
+              <VitalCard
+                label="Avg. Patients / Doctor"
+                value={avgDisplay}
+                decimals={1}
+                icon={Activity}
+                accentColor="text-slate-800"
+                bgColor="bg-slate-100"
+              />
+            </>
+          )}
+        </div>
+
+        {/* Analytics Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {loading ? (
+            <>
+              <ChartSkeleton />
+              <ChartSkeleton />
+            </>
+          ) : (
+            <>
+              <Card className="p-6 transition-shadow duration-200 hover:shadow-md">
+                <PanelHeader
+                  title="Patients per Doctor"
+                  caption="Distribution of patients assigned to each doctor"
+                  dotColor="bg-teal-600"
+                  total={patientsPerDoctor.length}
+                  totalLabel="doctors"
+                />
+                <div className="h-72 w-full pt-2">
+                  {patientsPerDoctor.length === 0 ? (
+                    <EmptyChartState label="No doctors have assigned patients yet." />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={patientsPerDoctor} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <RechartsTooltip content={<ReadoutTooltip unit="patients" />} cursor={{ fill: '#E3F2F1' }} />
+                        <Bar dataKey="patientCount" name="Patients" fill="#0E7C86" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </Card>
+
+              <Card className="p-6 transition-shadow duration-200 hover:shadow-md">
+                <PanelHeader
+                  title="Patient Registration Trend"
+                  caption="Date-based patient additions over time"
+                  dotColor="bg-amber-600"
+                  total={totalNewPatients}
+                  totalLabel="this period"
+                />
+                <div className="h-72 w-full pt-2">
+                  {dateStats.length === 0 ? (
+                    <EmptyChartState label="No registration activity in this range yet." />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={dateStats} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
+                        <XAxis dataKey="_id" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                        <RechartsTooltip content={<ReadoutTooltip unit="new" />} cursor={{ stroke: '#C76E00', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                        <Line
+                          type="monotone"
+                          dataKey="count"
+                          name="New Patients"
+                          stroke="#C76E00"
+                          strokeWidth={2.5}
+                          dot={{ fill: '#C76E00', r: 3.5, strokeWidth: 0 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </Card>
+            </>
+          )}
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }

@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
+import { verifyAuth } from '@/lib/auth';
 import Patient from '@/models/Patient';
 import Doctor from '@/models/Doctor';
 
 // GET: Fetch all patients under a specific doctor
 export async function GET(req, { params }) {
   try {
+    await verifyAuth();
     await connectDB();
     const { id: doctorId } = await params;
 
