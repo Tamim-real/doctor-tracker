@@ -9,17 +9,16 @@ export async function GET(req) {
     await verifyAuth();
     await connectDB();
 
-    await connectDB();
-
     const { searchParams } = new URL(req.url);
 
     const search = searchParams.get('search') || '';
     const condition = searchParams.get('condition') || '';
+    const gender = searchParams.get('gender') || '';
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
     const page = parseInt(searchParams.get('page')) || 1;
-    const limit = parseInt(searchParams.get('limit')) || 10;
+    const limit = parseInt(searchParams.get('limit')) || 5;
     const skip = (page - 1) * limit;
 
     let query = {};
@@ -37,16 +36,31 @@ export async function GET(req) {
       query.condition = { $regex: condition, $options: 'i' };
     }
 
-    // 3. Date-wise Filter
+    // Filter by Gender
+    if (gender && gender !== 'all') {
+      query.gender = gender;
+    }
+
+    // 3. Date-wise Filter Fix
     if (startDate || endDate) {
       query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0); 
+        query.createdAt.$gte = start;
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999); 
+        query.createdAt.$lte = end;
+      }
     }
 
     const [patients, totalPatients] = await Promise.all([
       Patient.find(query)
-        .populate('doctor', 'name specialization hospital') // Doctor Details Populate
+        .populate('doctor', 'name specialization hospital')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)

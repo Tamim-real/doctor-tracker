@@ -101,7 +101,7 @@ export default function DoctorsPage() {
     try {
       const queryParams = new URLSearchParams({
         page: page.toString(),
-        limit: '10',
+        limit: '5',
         ...(debouncedSearch && { search: debouncedSearch }),
         ...(specialization !== 'All' && { specialization }),
         ...(startDate && { startDate }),

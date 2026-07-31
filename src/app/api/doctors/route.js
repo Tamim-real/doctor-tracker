@@ -7,7 +7,6 @@ import Doctor from '@/models/Doctor';
 export async function GET(req) {
   try {
     await verifyAuth();
-
     await connectDB();
 
     const { searchParams } = new URL(req.url);
@@ -20,30 +19,44 @@ export async function GET(req) {
 
     // Pagination
     const page = parseInt(searchParams.get('page')) || 1;
-    const limit = parseInt(searchParams.get('limit')) || 10;
+    const limit = parseInt(searchParams.get('limit')) || 5;
     const skip = (page - 1) * limit;
 
     // Filter Query Object
     let query = {};
 
-    
+    // 1. Search by Name, Specialization or Hospital
     if (search) {
-      query.$text = { $search: search };
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { specialization: { $regex: search, $options: 'i' } },
+        { hospital: { $regex: search, $options: 'i' } },
+      ];
     }
 
-
-    if (specialization) {
+    // 2. Filter by Specialization
+    if (specialization && specialization !== 'All') {
       query.specialization = { $regex: specialization, $options: 'i' };
     }
 
-//    Date-wise Filter (createdAt)
+    // 3. Date-wise Filter 
     if (startDate || endDate) {
       query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0); 
+        query.createdAt.$gte = start;
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999); 
+        query.createdAt.$lte = end;
+      }
     }
 
-    // Execute queries in parallel for performance optimization
+  
     const [doctors, totalDoctors] = await Promise.all([
       Doctor.find(query)
         .sort({ createdAt: -1 })

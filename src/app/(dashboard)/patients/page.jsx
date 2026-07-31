@@ -79,7 +79,7 @@ export default function PatientsPage() {
     try {
       const query = new URLSearchParams({
         page: page.toString(),
-        limit: '10',
+        limit: '5',
         ...(search && { search }),
         ...(condition && { condition }),
         ...(gender !== 'all' && { gender }),
@@ -109,7 +109,7 @@ export default function PatientsPage() {
 
   const handleEditClick = (patient) => {
     setSelectedPatient({ ...patient });
-    setEditModalOpen(true); // 🟢 আগে এটি false ছিল, এখন true করা হয়েছে
+    setEditModalOpen(true); 
   };
 
   const handleDeletePatient = (patientId, patientName) => {
@@ -277,7 +277,7 @@ export default function PatientsPage() {
                 <TableCell colSpan={6} className="h-32 text-center">
                   <div className="flex items-center justify-center gap-2 text-slate-500 text-sm">
                     <div className="w-4 h-4 rounded-full border-2 border-teal-600 border-t-transparent animate-spin" />
-                    Querying records…
+                    Finding Patients…
                   </div>
                 </TableCell>
               </TableRow>
