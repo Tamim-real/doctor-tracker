@@ -25,7 +25,7 @@ Follow these step-by-step instructions to get the project running locally on you
 
    Install Dependencies
 
-Bash
+ ```Bash
 npm install
 Configure Environment Variables
 Create a .env.local file in the root directory by duplicating the .env.example file:
@@ -38,7 +38,9 @@ Start the Development Server
 
 Bash
 npm run dev
-Open http://localhost:3000 in your browser to view the application.
+Open http://localhost:3000 in your browser to view the application.```
+
+
 
 .env.example File Content
 Create a file named .env.example in your root directory containing:
