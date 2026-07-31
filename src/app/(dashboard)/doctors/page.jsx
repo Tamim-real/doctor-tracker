@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { useDebounce } from '@/hooks/useDebounce';
 import DoctorStats from '@/components/DoctorStats';
+import { toast } from 'sonner'; 
 import {
   Plus,
   Search,
@@ -41,6 +41,14 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { DatePicker } from '@/components/ui/DatePicker';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 const SPECIALIZATIONS = [
   'All',
@@ -51,6 +59,14 @@ const SPECIALIZATIONS = [
   'Dermatology',
   'General Medicine',
 ];
+
+const INITIAL_FORM_DATA = {
+  name: '',
+  specialization: '',
+  hospital: '',
+  phone: '',
+  email: '',
+};
 
 export default function DoctorsPage() {
   const [doctors, setDoctors] = useState([]);
@@ -70,6 +86,11 @@ export default function DoctorsPage() {
 
   const [deletingId, setDeletingId] = useState(null);
   const [openPopoverId, setOpenPopoverId] = useState(null);
+
+  // Modal and Form States
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const debouncedSearch = useDebounce(search, 400);
 
@@ -126,6 +147,35 @@ export default function DoctorsPage() {
     }
   };
 
+ 
+  const handleAddDoctorSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const res = await fetch('/api/doctors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        throw new Error(result.message || 'Failed to create doctor');
+      }
+
+      toast.success('Doctor registered successfully!');
+      setIsAddModalOpen(false);
+      setFormData(INITIAL_FORM_DATA);
+      fetchDoctors(); // Refresh table list automatically
+    } catch (err) {
+      toast.error(err.message || 'Something went wrong');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const hasActiveFilters =
     search || specialization !== 'All' || startDate || endDate;
 
@@ -149,11 +199,14 @@ export default function DoctorsPage() {
             Manage all doctors and their patient assignments
           </p>
         </div>
-        <Button asChild className="bg-teal-700 hover:bg-teal-800 text-white shrink-0">
-          <Link href="/doctors/new" className="inline-flex items-center justify-center whitespace-nowrap">
-            <Plus className="mr-2 h-4 w-4 shrink-0" />
-            <span>Add New Doctor</span>
-          </Link>
+        
+        {/* Trigger Button to Open Modal */}
+        <Button
+          onClick={() => setIsAddModalOpen(true)}
+          className="bg-teal-700 hover:bg-teal-800 text-white shrink-0"
+        >
+          <Plus className="mr-2 h-4 w-4 shrink-0" />
+          <span>Add New Doctor</span>
         </Button>
       </div>
 
@@ -350,9 +403,9 @@ export default function DoctorsPage() {
                             size="sm"
                             className="h-8 text-xs font-semibold"
                           >
-                            <Link href={`/doctors/${doctor._id}`}>
+                            <a href={`/doctors/${doctor._id}`}>
                               View Patients
-                            </Link>
+                            </a>
                           </Button>
 
                           <Popover
@@ -443,6 +496,126 @@ export default function DoctorsPage() {
           </>
         )}
       </Card>
+
+      {/* Add New Doctor Modal Dialog */}
+      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Add New Doctor</DialogTitle>
+            <DialogDescription>
+              Fill out the form below to register a new doctor in the database.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAddDoctorSubmit} className="space-y-4 py-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Doctor Name
+              </label>
+              <Input
+                required
+                placeholder="Dr. John Doe"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Specialization
+              </label>
+              <Select
+                value={formData.specialization}
+                onValueChange={(val) =>
+                  setFormData({ ...formData, specialization: val })
+                }
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Specialization" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SPECIALIZATIONS.filter((s) => s !== 'All').map((spec) => (
+                    <SelectItem key={spec} value={spec}>
+                      {spec}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Hospital
+              </label>
+              <Input
+                required
+                placeholder="City General Hospital"
+                value={formData.hospital}
+                onChange={(e) =>
+                  setFormData({ ...formData, hospital: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Phone
+              </label>
+              <Input
+                required
+                type="tel"
+                placeholder="+1 234 567 890"
+                value={formData.phone}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Email
+              </label>
+              <Input
+                required
+                type="email"
+                placeholder="doctor@example.com"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+              />
+            </div>
+
+            <DialogFooter className="pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAddModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="bg-teal-700 hover:bg-teal-800 text-white"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Doctor'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

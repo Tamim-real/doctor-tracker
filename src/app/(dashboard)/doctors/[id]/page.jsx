@@ -266,7 +266,7 @@ export default function DoctorDetailsPage() {
           className="rounded-full h-8 w-8 animate-spin"
           style={{ border: `2px solid ${tokens.line}`, borderTopColor: tokens.teal }}
         />
-        <p style={{ fontFamily: fontMono, fontSize: 12, color: tokens.slateLight }}>pulling chart…</p>
+        <p style={{ fontFamily: fontMono, fontSize: 12, color: tokens.slateLight }}>Please wait...</p>
       </div>
     );
   }
@@ -283,7 +283,7 @@ export default function DoctorDetailsPage() {
           className="mt-3 inline-flex items-center gap-1"
           style={{ color: tokens.teal, fontWeight: 600, fontSize: 12.5 }}
         >
-          <ArrowLeft size={13} /> Return to Doctors Directory
+          <ArrowLeft size={13} /> Return to Doctors Records
         </Link>
       </div>
     );
@@ -301,7 +301,7 @@ export default function DoctorDetailsPage() {
             className="inline-flex items-center gap-1 mb-2"
             style={{ fontFamily: fontBody, fontSize: 12, fontWeight: 600, color: tokens.teal }}
           >
-            <ArrowLeft size={13} /> Back to Doctors Directory
+            <ArrowLeft size={13} /> Back to Doctors Records
           </Link>
           <h1 style={{ fontFamily: fontDisplay, fontSize: 26, fontWeight: 700, color: tokens.ink }}>
             {doctor.name}
