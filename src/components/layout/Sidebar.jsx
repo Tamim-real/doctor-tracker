@@ -68,7 +68,7 @@ export default function Sidebar({ user }) {
             <HeartPulse size={16} />
           </div>
           <span style={{ fontFamily: fontDisplay, fontWeight: 700, fontSize: 16, color: tokens.ink }}>
-            HealthCare
+            Doctor Tracker
           </span>
         </div>
 
@@ -115,7 +115,7 @@ export default function Sidebar({ user }) {
                 <HeartPulse size={16} />
               </div>
               <span style={{ fontFamily: fontDisplay, fontWeight: 700, fontSize: 16, color: tokens.ink }}>
-                HealthCare
+                Doctor Tracker
               </span>
             </div>
             <button
