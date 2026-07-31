@@ -166,7 +166,7 @@ export default function Sidebar({ user }) {
               className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
               style={{ background: tokens.tealSoft, color: tokens.teal, fontFamily: fontMono, fontSize: 11, fontWeight: 700 }}
             >
-              {(user?.name || 'Dr. Admin')
+              {(user?.name || 'Admin')
                 .split(' ')
                 .map((w) => w[0])
                 .slice(0, 2)
@@ -175,10 +175,10 @@ export default function Sidebar({ user }) {
             </div>
             <div className="flex-1 min-w-0">
               <p style={{ fontSize: 13, fontWeight: 600, color: tokens.ink }} className="truncate">
-                {user?.name || 'Dr. Admin'}
+                {user?.name || 'Admin'}
               </p>
               <p style={{ fontFamily: fontMono, fontSize: 11, color: tokens.slateLight }} className="truncate">
-                {user?.email || 'admin@hospital.com'}
+                {user?.email || 'admin@doctortracker.com'}
               </p>
             </div>
             <button

@@ -187,7 +187,7 @@ export default function LoginPage() {
               style={{ border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff' }}
             />
           )}
-          {loading ? 'Authenticating…' : 'Sign In'}
+          {loading ? 'Logging in…' : 'Sign In'}
         </button>
       </form>
 
@@ -196,9 +196,7 @@ export default function LoginPage() {
         className="mt-6 pt-5 flex items-center justify-between"
         style={{ borderTop: `1px solid ${tokens.line}` }}
       >
-        <span className="flex items-center gap-1.5" style={{ fontSize: 12, color: tokens.slateLight }}>
-          <Sparkles size={12} /> Need demo credentials?
-        </span>
+        
         <button
           type="button"
           onClick={fillDemoAdmin}

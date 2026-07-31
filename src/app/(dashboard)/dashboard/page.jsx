@@ -14,7 +14,7 @@ import { VitalCard, VitalCardSkeleton } from '@/components/dashboard/vital-card'
 import { PatientsPerDoctorChart, RegistrationTrendChart, ChartSkeleton } from '@/components/dashboard/analytics-charts';
 import { ECGDivider } from '@/components/dashboard/dashboard-helpers';
 
-const getInitials = (name = 'Dr Admin') =>
+const getInitials = (name = 'Admin') =>
   name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
 export default function DashboardPage({ user }) {
@@ -106,9 +106,9 @@ export default function DashboardPage({ user }) {
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 pr-2">
-              <p className="text-xs font-semibold truncate">{user?.name || 'Dr. Admin'}</p>
+              <p className="text-xs font-semibold truncate">{user?.name || 'Admin'}</p>
               <p className="font-mono text-[11px] text-muted-foreground truncate">
-                {user?.email || 'admin@hospital.com'}
+                {user?.email || 'admin@doctortracker.com'}
               </p>
             </div>
             <Tooltip>
