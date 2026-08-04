@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -16,6 +16,12 @@ import {
   Trash2,
 } from 'lucide-react';
 
+import {
+  useGetDoctorByIdQuery,
+  useGetDoctorPatientsQuery,
+  useAddPatientMutation,
+  useDeletePatientMutation,
+} from '@/redux/services/doctorApi';
 
 const tokens = {
   paper: '#FAFBFC',
@@ -102,107 +108,81 @@ const inputStyle = {
   outline: 'none',
 };
 
+const INITIAL_PATIENT_FORM = {
+  name: '',
+  age: '',
+  gender: 'Male',
+  phone: '',
+  condition: '',
+};
+
 export default function DoctorDetailsPage() {
   const params = useParams();
   const doctorId = params?.id;
 
-  const [doctor, setDoctor] = useState(null);
-  const [patients, setPatients] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
   const [searchQuery, setSearchQuery] = useState('');
   const [genderFilter, setGenderFilter] = useState('All');
-
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [patientForm, setPatientForm] = useState(INITIAL_PATIENT_FORM);
   const [deletingPatientId, setDeletingPatientId] = useState(null);
 
-  const [patientForm, setPatientForm] = useState({
-    name: '',
-    age: '',
-    gender: 'Male',
-    phone: '',
-    condition: '',
+  // === RTK Query: doctor + patients fetch একসাথে ===
+  const {
+    data: doctor,
+    isLoading: isDoctorLoading,
+    isError: isDoctorError,
+    error: doctorError,
+  } = useGetDoctorByIdQuery(doctorId, { skip: !doctorId });
+
+  const {
+    data: patients = [],
+    isLoading: isPatientsLoading,
+  } = useGetDoctorPatientsQuery(doctorId, { skip: !doctorId });
+
+  const [addPatient, { isLoading: submitting }] = useAddPatientMutation();
+  const [deletePatient] = useDeletePatientMutation();
+
+  const loading = isDoctorLoading || isPatientsLoading;
+
+  const filteredPatients = patients.filter((patient) => {
+    const query = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      patient.name?.toLowerCase().includes(query) ||
+      patient.condition?.toLowerCase().includes(query) ||
+      patient.phone?.toLowerCase().includes(query);
+    const matchesGender = genderFilter === 'All' || patient.gender === genderFilter;
+    return matchesSearch && matchesGender;
   });
-
-  const fetchData = useCallback(async () => {
-    if (!doctorId) return;
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const [doctorRes, patientsRes] = await Promise.all([
-        fetch(`/api/doctors/${doctorId}`),
-        fetch(`/api/doctors/${doctorId}/patients`),
-      ]);
-
-      const doctorData = await doctorRes.json();
-      const patientsData = await patientsRes.json();
-
-      if (!doctorRes.ok || !doctorData.success) {
-        throw new Error(doctorData.message || 'Doctor details could not be loaded.');
-      }
-
-      setDoctor(doctorData.data);
-      setPatients(patientsRes.ok && patientsData.success ? patientsData.data || [] : []);
-    } catch (err) {
-      setError(err.message || 'An error occurred while fetching data.');
-    } finally {
-      setLoading(false);
-    }
-  }, [doctorId]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const filteredPatients = useMemo(() => {
-    return patients.filter((patient) => {
-      const query = searchQuery.toLowerCase().trim();
-
-      const matchesSearch =
-        !query ||
-        patient.name?.toLowerCase().includes(query) ||
-        patient.condition?.toLowerCase().includes(query) ||
-        patient.phone?.toLowerCase().includes(query);
-
-      const matchesGender = genderFilter === 'All' || patient.gender === genderFilter;
-
-      return matchesSearch && matchesGender;
-    });
-  }, [patients, searchQuery, genderFilter]);
 
   const handleAddPatient = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
-
     const toastId = toast.loading('Assigning patient...');
 
     try {
       const payload = { ...patientForm, age: Number(patientForm.age) };
-
-      const res = await fetch(`/api/doctors/${doctorId}/patients`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error(result.message || 'Failed to assign patient.');
-      }
+      await addPatient({ doctorId, ...payload }).unwrap();
 
       toast.success('Patient assigned successfully!', { id: toastId });
-      setPatientForm({ name: '', age: '', gender: 'Male', phone: '', condition: '' });
+      setPatientForm(INITIAL_PATIENT_FORM);
       setIsModalOpen(false);
-      fetchData();
+      // list auto-refetch হবে invalidatesTags এর কারণে
     } catch (err) {
-      toast.error(err.message || 'Something went wrong', { id: toastId });
+      toast.error(err?.data?.message || 'Something went wrong', { id: toastId });
+    }
+  };
+
+  const executeDeletePatient = async (patientId) => {
+    setDeletingPatientId(patientId);
+    const toastId = toast.loading('Removing patient...');
+
+    try {
+      await deletePatient({ patientId, doctorId }).unwrap();
+      toast.success('Patient removed successfully!', { id: toastId });
+    } catch (err) {
+      toast.error(err?.data?.message || 'Error deleting patient.', { id: toastId });
     } finally {
-      setSubmitting(false);
+      setDeletingPatientId(null);
     }
   };
 
@@ -238,27 +218,6 @@ export default function DoctorDetailsPage() {
     );
   };
 
-  const executeDeletePatient = async (patientId) => {
-    setDeletingPatientId(patientId);
-    const toastId = toast.loading('Removing patient...');
-
-    try {
-      const res = await fetch(`/api/patients/${patientId}`, { method: 'DELETE' });
-      const result = await res.json();
-
-      if (res.ok && result.success) {
-        toast.success('Patient removed successfully!', { id: toastId });
-        fetchData();
-      } else {
-        throw new Error(result.message || 'Failed to delete patient.');
-      }
-    } catch (err) {
-      toast.error(err.message || 'Error deleting patient.', { id: toastId });
-    } finally {
-      setDeletingPatientId(null);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3" style={{ background: tokens.paper }}>
@@ -271,13 +230,15 @@ export default function DoctorDetailsPage() {
     );
   }
 
-  if (error || !doctor) {
+  if (isDoctorError || !doctor) {
     return (
       <div
         className="p-6 rounded-2xl text-sm max-w-xl mx-auto my-8"
         style={{ background: tokens.redSoft, border: `1px solid #FDA29B`, color: tokens.red, fontFamily: fontBody }}
       >
-        <p style={{ fontWeight: 600 }}>{error || 'Doctor record not found.'}</p>
+        <p style={{ fontWeight: 600 }}>
+          {doctorError?.data?.message || 'Doctor record not found.'}
+        </p>
         <Link
           href="/doctors"
           className="mt-3 inline-flex items-center gap-1"
@@ -418,9 +379,7 @@ export default function DoctorDetailsPage() {
                 filteredPatients.map((patient, idx) => (
                   <tr
                     key={patient._id}
-                    style={{
-                      borderTop: idx === 0 ? 'none' : `1px solid ${tokens.line}`,
-                    }}
+                    style={{ borderTop: idx === 0 ? 'none' : `1px solid ${tokens.line}` }}
                   >
                     <td className="px-6 py-4" style={{ fontWeight: 600, color: tokens.ink }}>
                       {patient.name}

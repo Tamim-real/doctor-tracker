@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeartPulse, Mail, Lock, Eye, EyeOff, X, Sparkles } from 'lucide-react';
 
+import { useLoginMutation } from '@/redux/services/authApi';
 
 const tokens = {
   paper: '#FAFBFC',
@@ -16,7 +17,6 @@ const tokens = {
   redSoft: '#FEF3F2',
   line: '#E4E7EC',
 };
-
 
 const fontDisplay = "var(--font-display), 'Space Grotesk', sans-serif";
 const fontBody = "var(--font-body), 'Inter', system-ui, sans-serif";
@@ -63,34 +63,22 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
 
   const router = useRouter();
 
+  // === RTK Query: replaces useState(loading) + fetch ===
+  const [login, { isLoading: loading }] = useLoginMutation();
+
   const handleLogin = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Invalid email or password');
-      }
-
+      await login({ email, password }).unwrap();
       router.push('/dashboard');
       router.refresh();
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      setError(err?.data?.message || 'Invalid email or password');
     }
   };
 
@@ -196,7 +184,6 @@ export default function LoginPage() {
         className="mt-6 pt-5 flex items-center justify-between"
         style={{ borderTop: `1px solid ${tokens.line}` }}
       >
-        
         <button
           type="button"
           onClick={fillDemoAdmin}

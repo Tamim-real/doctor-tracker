@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import { useDebounce } from '@/hooks/useDebounce';
 import DoctorStats from '@/components/DoctorStats';
-import { toast } from 'sonner'; 
+import { toast } from 'sonner';
 import {
   Plus,
   Search,
@@ -50,6 +51,18 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 
+import {
+  useGetDoctorsQuery,
+  useAddDoctorMutation,
+  useDeleteDoctorMutation,
+} from '@/redux/services/doctorApi';
+
+import {
+  setDoctorFilters,
+  setDoctorPage,
+  resetDoctorFilters,
+} from '@/redux/slices/filtersSlice';
+
 const SPECIALIZATIONS = [
   'All',
   'Cardiology',
@@ -69,122 +82,85 @@ const INITIAL_FORM_DATA = {
 };
 
 export default function DoctorsPage() {
-  const [doctors, setDoctors] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const dispatch = useDispatch();
 
-  const [search, setSearch] = useState('');
-  const [specialization, setSpecialization] = useState('All');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState({
+  // ===== Redux filters state =====
+  const {
+    search: reduxSearch,
+    specialization,
+    startDate,
+    endDate,
+    page,
+  } = useSelector((state) => state.filters.doctorFilters);
+
+  
+  const [searchInput, setSearchInput] = useState(reduxSearch);
+  const debouncedSearch = useDebounce(searchInput, 400);
+
+  const [openPopoverId, setOpenPopoverId] = useState(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
+
+  
+  useEffect(() => {
+    if (debouncedSearch !== reduxSearch) {
+      dispatch(setDoctorFilters({ search: debouncedSearch, page: 1 }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
+  const { data, isLoading, isFetching, isError, error } = useGetDoctorsQuery({
+    page,
+    search: reduxSearch,
+    specialization: specialization !== 'All' ? specialization : '',
+    startDate,
+    endDate,
+    limit: 5,
+  });
+
+  const doctors = data?.doctors ?? [];
+  const pagination = data?.pagination ?? {
     totalPages: 1,
     totalDoctors: 0,
     currentPage: 1,
-  });
+  };
 
+  // === Mutations ===
+  const [addDoctor, { isLoading: isSubmitting }] = useAddDoctorMutation();
+  const [deleteDoctor, { isLoading: isDeleting }] = useDeleteDoctorMutation();
   const [deletingId, setDeletingId] = useState(null);
-  const [openPopoverId, setOpenPopoverId] = useState(null);
-
-  // Modal and Form States
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const debouncedSearch = useDebounce(search, 400);
-
-  const fetchDoctors = useCallback(async () => {
-    setLoading(true);
-    setError('');
-
-    try {
-      const queryParams = new URLSearchParams({
-        page: page.toString(),
-        limit: '5',
-        ...(debouncedSearch && { search: debouncedSearch }),
-        ...(specialization !== 'All' && { specialization }),
-        ...(startDate && { startDate }),
-        ...(endDate && { endDate }),
-      });
-
-      const res = await fetch(`/api/doctors?${queryParams.toString()}`);
-      const result = await res.json();
-
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to fetch doctors');
-      }
-
-      setDoctors(result.data);
-      setPagination(result.pagination);
-    } catch (err) {
-      setError(err.message || 'Something went wrong');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, debouncedSearch, specialization, startDate, endDate]);
-
-  useEffect(() => {
-    fetchDoctors();
-  }, [fetchDoctors]);
 
   const handleDelete = async (id) => {
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/doctors/${id}`, { method: 'DELETE' });
-      const result = await res.json();
-
-      if (result.success) {
-        fetchDoctors();
-      } else {
-        setError(result.message || 'Delete failed');
-      }
+      await deleteDoctor(id).unwrap();
+      toast.success('Doctor deleted successfully');
     } catch (err) {
-      setError('Error deleting doctor');
+      toast.error(err?.data?.message || 'Error deleting doctor');
     } finally {
       setDeletingId(null);
       setOpenPopoverId(null);
     }
   };
 
- 
   const handleAddDoctorSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
-
     try {
-      const res = await fetch('/api/doctors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error(result.message || 'Failed to create doctor');
-      }
-
+      await addDoctor(formData).unwrap();
       toast.success('Doctor registered successfully!');
       setIsAddModalOpen(false);
       setFormData(INITIAL_FORM_DATA);
-      fetchDoctors(); // Refresh table list automatically
     } catch (err) {
-      toast.error(err.message || 'Something went wrong');
-    } finally {
-      setIsSubmitting(false);
+      toast.error(err?.data?.message || 'Something went wrong');
     }
   };
 
   const hasActiveFilters =
-    search || specialization !== 'All' || startDate || endDate;
+    reduxSearch || specialization !== 'All' || startDate || endDate;
 
   const clearFilters = () => {
-    setSearch('');
-    setSpecialization('All');
-    setStartDate('');
-    setEndDate('');
-    setPage(1);
+    setSearchInput('');
+    dispatch(resetDoctorFilters());
   };
 
   return (
@@ -199,8 +175,7 @@ export default function DoctorsPage() {
             Manage all doctors and their patient assignments
           </p>
         </div>
-        
-        {/* Trigger Button to Open Modal */}
+
         <Button
           onClick={() => setIsAddModalOpen(true)}
           className="bg-teal-700 hover:bg-teal-800 text-white shrink-0"
@@ -210,18 +185,16 @@ export default function DoctorsPage() {
         </Button>
       </div>
 
-      {/* Analytics Dashboard */}
       <DoctorStats
         doctors={doctors}
         totalDoctors={pagination.totalDoctors}
-        loading={loading}
+        loading={isLoading}
       />
 
       {/* Filters Card */}
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Search */}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Search
@@ -231,27 +204,22 @@ export default function DoctorsPage() {
                 <Input
                   type="text"
                   placeholder="Name or specialty…"
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(1);
-                  }}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                   className="pl-9"
                 />
               </div>
             </div>
 
-            {/* Specialization Select */}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Specialization
               </label>
               <Select
                 value={specialization}
-                onValueChange={(val) => {
-                  setSpecialization(val);
-                  setPage(1);
-                }}
+                onValueChange={(val) =>
+                  dispatch(setDoctorFilters({ specialization: val, page: 1 }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select specialization" />
@@ -266,32 +234,28 @@ export default function DoctorsPage() {
               </Select>
             </div>
 
-            {/* From Date */}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 From Date
               </label>
               <DatePicker
                 value={startDate}
-                onChange={(date) => {
-                  setStartDate(date);
-                  setPage(1);
-                }}
+                onChange={(date) =>
+                  dispatch(setDoctorFilters({ startDate: date, page: 1 }))
+                }
                 placeholder="Select start date"
               />
             </div>
 
-            {/* To Date */}
             <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 To Date
               </label>
               <DatePicker
                 value={endDate}
-                onChange={(date) => {
-                  setEndDate(date);
-                  setPage(1);
-                }}
+                onChange={(date) =>
+                  dispatch(setDoctorFilters({ endDate: date, page: 1 }))
+                }
                 placeholder="Select end date"
               />
             </div>
@@ -312,9 +276,9 @@ export default function DoctorsPage() {
         </CardContent>
       </Card>
 
-      {/* Main Table Card */}
+      {/* Table Card */}
       <Card className="overflow-hidden">
-        {loading ? (
+        {isLoading ? (
           <div className="p-6 space-y-4">
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -331,12 +295,15 @@ export default function DoctorsPage() {
               ))}
             </div>
           </div>
-        ) : error ? (
+        ) : isError ? (
           <div className="p-6 text-center text-sm font-medium text-destructive bg-destructive/10 m-4 rounded-lg">
-            {error}
+            {error?.data?.message || 'Something went wrong'}
           </div>
         ) : (
           <>
+            {isFetching && (
+              <p className="px-6 pt-3 text-xs text-muted-foreground">Updating…</p>
+            )}
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow>
@@ -350,10 +317,7 @@ export default function DoctorsPage() {
               <TableBody>
                 {doctors.length === 0 ? (
                   <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="h-32 text-center text-muted-foreground"
-                    >
+                    <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
                       No doctors match your filters.
                     </TableCell>
                   </TableRow>
@@ -397,22 +361,13 @@ export default function DoctorsPage() {
 
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            asChild
-                            variant="secondary"
-                            size="sm"
-                            className="h-8 text-xs font-semibold"
-                          >
-                            <a href={`/doctors/${doctor._id}`}>
-                              View Patients
-                            </a>
+                          <Button asChild variant="secondary" size="sm" className="h-8 text-xs font-semibold">
+                            <a href={`/doctors/${doctor._id}`}>View Patients</a>
                           </Button>
 
                           <Popover
                             open={openPopoverId === doctor._id}
-                            onOpenChange={(open) =>
-                              setOpenPopoverId(open ? doctor._id : null)
-                            }
+                            onOpenChange={(open) => setOpenPopoverId(open ? doctor._id : null)}
                           >
                             <PopoverTrigger asChild>
                               <Button
@@ -423,10 +378,7 @@ export default function DoctorsPage() {
                                 <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent
-                              align="end"
-                              className="w-60 p-4 space-y-3"
-                            >
+                            <PopoverContent align="end" className="w-60 p-4 space-y-3">
                               <p className="text-xs font-medium text-foreground">
                                 Are you sure you want to delete this doctor?
                               </p>
@@ -443,10 +395,10 @@ export default function DoctorsPage() {
                                   variant="destructive"
                                   size="sm"
                                   className="h-7 text-xs"
-                                  disabled={deletingId === doctor._id}
+                                  disabled={isDeleting && deletingId === doctor._id}
                                   onClick={() => handleDelete(doctor._id)}
                                 >
-                                  {deletingId === doctor._id ? (
+                                  {isDeleting && deletingId === doctor._id ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                   ) : (
                                     'Confirm'
@@ -476,7 +428,7 @@ export default function DoctorsPage() {
                     variant="outline"
                     size="sm"
                     disabled={page === 1}
-                    onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                    onClick={() => dispatch(setDoctorPage(Math.max(page - 1, 1)))}
                   >
                     <ChevronLeft className="h-4 w-4 mr-1" /> Previous
                   </Button>
@@ -485,7 +437,7 @@ export default function DoctorsPage() {
                     size="sm"
                     disabled={page === pagination.totalPages}
                     onClick={() =>
-                      setPage((prev) => Math.min(prev + 1, pagination.totalPages))
+                      dispatch(setDoctorPage(Math.min(page + 1, pagination.totalPages)))
                     }
                   >
                     Next <ChevronRight className="h-4 w-4 ml-1" />
@@ -497,7 +449,7 @@ export default function DoctorsPage() {
         )}
       </Card>
 
-      {/* Add New Doctor Modal Dialog */}
+      {/* Add Doctor Modal */}
       <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -509,28 +461,20 @@ export default function DoctorsPage() {
 
           <form onSubmit={handleAddDoctorSubmit} className="space-y-4 py-2">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">
-                Doctor Name
-              </label>
+              <label className="text-xs font-semibold text-muted-foreground">Doctor Name</label>
               <Input
                 required
                 placeholder="Dr. John Doe"
                 value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">
-                Specialization
-              </label>
+              <label className="text-xs font-semibold text-muted-foreground">Specialization</label>
               <Select
                 value={formData.specialization}
-                onValueChange={(val) =>
-                  setFormData({ ...formData, specialization: val })
-                }
+                onValueChange={(val) => setFormData({ ...formData, specialization: val })}
                 required
               >
                 <SelectTrigger>
@@ -547,55 +491,39 @@ export default function DoctorsPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">
-                Hospital
-              </label>
+              <label className="text-xs font-semibold text-muted-foreground">Hospital</label>
               <Input
                 required
                 placeholder="City General Hospital"
                 value={formData.hospital}
-                onChange={(e) =>
-                  setFormData({ ...formData, hospital: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, hospital: e.target.value })}
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">
-                Phone
-              </label>
+              <label className="text-xs font-semibold text-muted-foreground">Phone</label>
               <Input
                 required
                 type="tel"
                 placeholder="+1 234 567 890"
                 value={formData.phone}
-                onChange={(e) =>
-                  setFormData({ ...formData, phone: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">
-                Email
-              </label>
+              <label className="text-xs font-semibold text-muted-foreground">Email</label>
               <Input
                 required
                 type="email"
                 placeholder="doctor@example.com"
                 value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               />
             </div>
 
             <DialogFooter className="pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsAddModalOpen(false)}
-              >
+              <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>
                 Cancel
               </Button>
               <Button

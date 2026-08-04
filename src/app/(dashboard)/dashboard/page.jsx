@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Stethoscope, Users, Activity, HeartPulse, LogOut } from 'lucide-react';
@@ -14,51 +14,32 @@ import { VitalCard, VitalCardSkeleton } from '@/components/dashboard/vital-card'
 import { PatientsPerDoctorChart, RegistrationTrendChart, ChartSkeleton } from '@/components/dashboard/analytics-charts';
 import { ECGDivider } from '@/components/dashboard/dashboard-helpers';
 
+import { useGetAnalyticsQuery } from '@/redux/services/analyticsApi';
+import { useLogoutMutation } from '@/redux/services/authApi';
+
 const getInitials = (name = 'Admin') =>
   name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
 export default function DashboardPage({ user }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loggingOut, setLoggingOut] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    let cancelled = false;
+  
+  const { data, isLoading: loading, isError, error } = useGetAnalyticsQuery();
 
-    async function fetchAnalytics() {
-      try {
-        const res = await fetch('/api/analytics');
-        const result = await res.json();
+  const [logout, { isLoading: loggingOut }] = useLogoutMutation();
 
-        if (!cancelled) {
-          if (res.ok && result.success) {
-            setData(result.data);
-          } else {
-            toast.error(result.message || 'Could not load analytics.');
-          }
-        }
-      } catch {
-        if (!cancelled) toast.error('Network error. Failed to load analytics.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    fetchAnalytics();
-    return () => { cancelled = true; };
-  }, []);
+  
+  if (isError && !loading) {
+    toast.error(error?.data?.message || 'Could not load analytics.');
+  }
 
   const handleLogout = async () => {
-    setLoggingOut(true);
     try {
-      const res = await fetch('/api/auth/logout', { method: 'POST' });
-      if (!res.ok) throw new Error();
+      await logout().unwrap();
       router.push('/login');
       router.refresh();
     } catch {
       toast.error('Could not sign out. Please try again.');
-      setLoggingOut(false);
     }
   };
 
@@ -83,7 +64,7 @@ export default function DashboardPage({ user }) {
   return (
     <TooltipProvider>
       <div className="space-y-8 p-8 min-h-screen bg-background text-foreground">
-        
+
         {/* Header */}
         <header className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b">
           <div>

@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import toast from 'react-hot-toast';
+import { useDebounce } from '@/hooks/useDebounce';
 import {
   Search,
   Filter,
@@ -14,7 +16,6 @@ import {
   X,
 } from 'lucide-react';
 
-// shadcn UI Components
 import {
   Table,
   TableBody,
@@ -50,66 +51,76 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DatePicker } from '@/components/ui/DatePicker';
 
+import {
+  useGetPatientsQuery,
+  useUpdatePatientMutation,
+  useDeletePatientMutation,
+} from '@/redux/services/patientApi';
+
+import {
+  setPatientFilters,
+  setPatientPage,
+  resetPatientFilters,
+} from '@/redux/slices/filtersSlice'; 
+
 export default function PatientsPage() {
-  const [patients, setPatients] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const dispatch = useDispatch();
 
-  // Filter States
-  const [search, setSearch] = useState('');
-  const [condition, setCondition] = useState('');
-  const [gender, setGender] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // ===== Redux filters state =====
+  const {
+    search: reduxSearch,
+    condition,
+    gender,
+    startDate,
+    endDate,
+    page,
+  } = useSelector((state) => state.filters.patientFilters);
 
-  // Pagination State
-  const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState({
-    totalPages: 1,
-    totalPatients: 0,
-    currentPage: 1,
-  });
+  // ===== Local state শুধু search input-এর immediate typing feel-এর জন্য =====
+  const [searchInput, setSearchInput] = useState(reduxSearch);
+  const debouncedSearch = useDebounce(searchInput, 400);
 
-  // Modal States
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
-  const [saving, setSaving] = useState(false);
 
-  const fetchPatients = useCallback(async () => {
-    setLoading(true);
-    try {
-      const query = new URLSearchParams({
-        page: page.toString(),
-        limit: '5',
-        ...(search && { search }),
-        ...(condition && { condition }),
-        ...(gender !== 'all' && { gender }),
-        ...(startDate && { startDate }),
-        ...(endDate && { endDate }),
-      }).toString();
-
-      const res = await fetch(`/api/patients?${query}`);
-      const result = await res.json();
-
-      if (res.ok && result.success) {
-        setPatients(result.data || []);
-        setPagination(result.pagination || {});
-      } else {
-        toast.error(result.message || 'Failed to load patients.');
-      }
-    } catch (err) {
-      toast.error('Error fetching patient list.');
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, condition, gender, startDate, endDate]);
-
+  // debounced value change hole redux-এ sync করো + page 1-এ reset
   useEffect(() => {
-    fetchPatients();
-  }, [fetchPatients]);
+    if (debouncedSearch !== reduxSearch) {
+      dispatch(setPatientFilters({ search: debouncedSearch, page: 1 }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
+  // === RTK Query ===
+  const { data, isLoading: loading } = useGetPatientsQuery({
+    page,
+    search: reduxSearch,
+    condition,
+    gender,
+    startDate,
+    endDate,
+    limit: 5,
+  });
+
+  const patients = data?.patients ?? [];
+  const pagination = data?.pagination ?? { totalPages: 1, totalPatients: 0, currentPage: 1 };
+
+  const [updatePatient, { isLoading: saving }] = useUpdatePatientMutation();
+  const [deletePatient] = useDeletePatientMutation();
 
   const handleEditClick = (patient) => {
     setSelectedPatient({ ...patient });
-    setEditModalOpen(true); 
+    setEditModalOpen(true);
+  };
+
+  const executeDelete = async (patientId) => {
+    const tid = toast.loading('Deleting...');
+    try {
+      await deletePatient(patientId).unwrap();
+      toast.success('Deleted!', { id: tid });
+    } catch {
+      toast.error('Failed to delete', { id: tid });
+    }
   };
 
   const handleDeletePatient = (patientId, patientName) => {
@@ -120,28 +131,15 @@ export default function PatientsPage() {
             Delete patient <span className="font-bold">{patientName}</span>?
           </p>
           <div className="flex justify-end gap-2 mt-1">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => toast.dismiss(t.id)}
-            >
+            <Button variant="outline" size="sm" onClick={() => toast.dismiss(t.id)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
               size="sm"
-              onClick={async () => {
+              onClick={() => {
                 toast.dismiss(t.id);
-                const tid = toast.loading('Deleting...');
-                const res = await fetch(`/api/patients/${patientId}`, {
-                  method: 'DELETE',
-                });
-                if (res.ok) {
-                  toast.success('Deleted!', { id: tid });
-                  fetchPatients();
-                } else {
-                  toast.error('Failed to delete', { id: tid });
-                }
+                executeDelete(patientId);
               }}
             >
               Delete
@@ -153,16 +151,22 @@ export default function PatientsPage() {
     );
   };
 
+  const handleSaveEdit = async () => {
+    try {
+      await updatePatient(selectedPatient).unwrap();
+      toast.success('Patient updated successfully!');
+      setEditModalOpen(false);
+    } catch {
+      toast.error('Failed to update patient');
+    }
+  };
+
   const hasActiveFilters =
-    search || condition || (gender && gender !== 'all') || startDate || endDate;
+    reduxSearch || condition || (gender && gender !== 'all') || startDate || endDate;
 
   const clearFilters = () => {
-    setSearch('');
-    setCondition('');
-    setGender('all');
-    setStartDate('');
-    setEndDate('');
-    setPage(1);
+    setSearchInput('');
+    dispatch(resetPatientFilters());
   };
 
   return (
@@ -184,11 +188,8 @@ export default function PatientsPage() {
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Search name..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-9"
             />
           </div>
@@ -198,20 +199,18 @@ export default function PatientsPage() {
             <Input
               placeholder="Filter condition..."
               value={condition}
-              onChange={(e) => {
-                setCondition(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) =>
+                dispatch(setPatientFilters({ condition: e.target.value, page: 1 }))
+              }
               className="pl-9"
             />
           </div>
 
           <Select
             value={gender}
-            onValueChange={(value) => {
-              setGender(value);
-              setPage(1);
-            }}
+            onValueChange={(value) =>
+              dispatch(setPatientFilters({ gender: value, page: 1 }))
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="Gender" />
@@ -226,19 +225,17 @@ export default function PatientsPage() {
 
           <DatePicker
             value={startDate}
-            onChange={(date) => {
-              setStartDate(date);
-              setPage(1);
-            }}
+            onChange={(date) =>
+              dispatch(setPatientFilters({ startDate: date, page: 1 }))
+            }
             placeholder="From Date"
           />
 
           <DatePicker
             value={endDate}
-            onChange={(date) => {
-              setEndDate(date);
-              setPage(1);
-            }}
+            onChange={(date) =>
+              dispatch(setPatientFilters({ endDate: date, page: 1 }))
+            }
             placeholder="To Date"
           />
         </div>
@@ -345,9 +342,7 @@ export default function PatientsPage() {
                           Edit details
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() =>
-                            handleDeletePatient(patient._id, patient.name)
-                          }
+                          onClick={() => handleDeletePatient(patient._id, patient.name)}
                           className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
                         >
                           <Trash2 className="mr-2 h-3.5 w-3.5" />
@@ -375,7 +370,7 @@ export default function PatientsPage() {
                 variant="outline"
                 size="sm"
                 disabled={page === 1}
-                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                onClick={() => dispatch(setPatientPage(Math.max(page - 1, 1)))}
               >
                 <ChevronLeft className="h-4 w-4 mr-1" /> Previous
               </Button>
@@ -383,7 +378,7 @@ export default function PatientsPage() {
                 variant="outline"
                 size="sm"
                 disabled={page >= pagination.totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => dispatch(setPatientPage(page + 1))}
               >
                 Next <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
@@ -392,7 +387,7 @@ export default function PatientsPage() {
         )}
       </div>
 
-      {/* 🟢 Edit Patient Dialog */}
+      {/* Edit Patient Dialog */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -418,10 +413,7 @@ export default function PatientsPage() {
                   className="col-span-3"
                   value={selectedPatient.age || ''}
                   onChange={(e) =>
-                    setSelectedPatient({
-                      ...selectedPatient,
-                      age: Number(e.target.value),
-                    })
+                    setSelectedPatient({ ...selectedPatient, age: Number(e.target.value) })
                   }
                 />
               </div>
@@ -431,10 +423,7 @@ export default function PatientsPage() {
                   className="col-span-3"
                   value={selectedPatient.condition || ''}
                   onChange={(e) =>
-                    setSelectedPatient({
-                      ...selectedPatient,
-                      condition: e.target.value,
-                    })
+                    setSelectedPatient({ ...selectedPatient, condition: e.target.value })
                   }
                 />
               </div>
@@ -444,10 +433,7 @@ export default function PatientsPage() {
                   className="col-span-3"
                   value={selectedPatient.phone || ''}
                   onChange={(e) =>
-                    setSelectedPatient({
-                      ...selectedPatient,
-                      phone: e.target.value,
-                    })
+                    setSelectedPatient({ ...selectedPatient, phone: e.target.value })
                   }
                 />
               </div>
@@ -458,30 +444,7 @@ export default function PatientsPage() {
             <Button variant="outline" onClick={() => setEditModalOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  const res = await fetch(`/api/patients/${selectedPatient._id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(selectedPatient),
-                  });
-                  if (res.ok) {
-                    toast.success('Patient updated successfully!');
-                    setEditModalOpen(false);
-                    fetchPatients();
-                  } else {
-                    toast.error('Failed to update patient');
-                  }
-                } catch (err) {
-                  toast.error('Error updating patient');
-                } finally {
-                  setSaving(false);
-                }
-              }}
-              disabled={saving}
-            >
+            <Button onClick={handleSaveEdit} disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>

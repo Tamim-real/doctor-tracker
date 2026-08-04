@@ -1,4 +1,5 @@
 import { Space_Grotesk, Inter, IBM_Plex_Mono, Geist } from 'next/font/google';
+import ReduxProvider from '@/redux/provider';
 import { Toaster } from 'react-hot-toast';
 import './globals.css';
 import { cn } from "@/lib/utils";
@@ -34,9 +35,11 @@ export default function RootLayout({ children }) {
       <body
         className={`${inter.className} ${spaceGrotesk.variable} ${inter.variable} ${plexMono.variable} bg-slate-50 text-slate-900 antialiased`}
       >
-        {children}
-        {/* Toast Provider */}
-        <Toaster position="top-right" reverseOrder={false} />
+        <ReduxProvider>
+          {children}
+          {/* Toast Provider */}
+          <Toaster position="top-right" reverseOrder={false} />
+        </ReduxProvider>
       </body>
     </html>
   );
